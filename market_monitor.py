@@ -152,7 +152,7 @@ Structure your response exactly like this:
 (Bullish / Bearish / Neutral / Cautious) + one-sentence justification.
 
 **2. Market Momentum & Quality**
-- Key indices (SPX, Russell 2000): trend, position relative to 20/50/200 DMAs, volume profile.
+- Key indices (SPX): trend, position relative to 20/50/200 DMAs, volume profile.
 - Market breadth.
 - VIX level and trend.
 
