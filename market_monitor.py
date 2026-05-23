@@ -108,64 +108,85 @@ def load() -> pd.DataFrame:
 
 # ── Claude analysis ───────────────────────────────────────────────────────────
 
+def _md_to_html(text: str) -> str:
+    import re
+    html, in_ul = [], False
+    for line in text.splitlines():
+        # Section headers: **1. Title**
+        m = re.match(r'^\*\*(.+)\*\*\s*$', line.strip())
+        if m:
+            if in_ul:
+                html.append("</ul>"); in_ul = False
+            html.append(f'<p class="ai-section">{m.group(1)}</p>')
+            continue
+        # Bullet points
+        if re.match(r'^[-•*] ', line.strip()):
+            if not in_ul:
+                html.append("<ul>"); in_ul = True
+            content = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', line.strip()[2:])
+            html.append(f"<li>{content}</li>")
+            continue
+        # Close list on blank or non-bullet line
+        if in_ul:
+            html.append("</ul>"); in_ul = False
+        if line.strip():
+            content = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', line.strip())
+            html.append(f"<p>{content}</p>")
+    if in_ul:
+        html.append("</ul>")
+    return "\n".join(html)
+
+
 def get_claude_analysis(df: pd.DataFrame) -> str:
     api_key = os.environ.get("GEMINI_API_KEY", "")
     if not api_key:
         return "<p style='color:var(--red)'>GEMINI_API_KEY not set — add it to .env</p>"
 
-    L    = df.iloc[-1]
-    prev = df.iloc[-6:-1]  # last 5 days for trend context
+    prompt = """You are an experienced professional swing momentum trader with years of experience. Focus on technical momentum, price action, volume, and market breadth for 3–15 day holding periods.
 
-    def fmt_row(r):
-        return (
-            f"  {r['date'].strftime('%b %d')}: "
-            f"T2108={r['t2108']*100:.1f}%  "
-            f"Up4%={int(r['up_4pct'])}  Dn4%={int(r['dn_4pct'])}  "
-            f"Ratio5d={r['ratio_5d']:.2f}  Ratio10d={r['ratio_10d']:.2f}  "
-            f"Up25Q={r['up_25pct_quarter']*100:.1f}%  Dn25Q={r['down_25pct_quarter']*100:.1f}%  "
-            f"Up25M={r['up_25pct_month']*100:.1f}%  Dn25M={r['down_25pct_month']*100:.1f}%"
-        )
+Provide a clear, concise market status update for swing trading right now. Use the latest price data and sentiment.
 
-    history = "\n".join(fmt_row(prev.iloc[i]) for i in range(len(prev)))
-    today   = fmt_row(L)
+Structure your response exactly like this:
 
-    prompt = f"""You are analysing Stockbee breadth data for US equities. Interpret the current market condition concisely.
+**1. Overall Market Bias**
+(Bullish / Bearish / Neutral / Cautious) + one-sentence justification.
 
-METRIC DEFINITIONS:
-- T2108: % of stocks above their 40-day MA. <20% = oversold, >80% = overbought.
-- Up4% / Dn4%: number of stocks up/down more than 4% today (raw surge/distribution count).
-- Ratio5d / Ratio10d: rolling 5-day and 10-day ratio of up-4% to down-4% days. >1 = bullish momentum, <1 = bearish.
-- Up25Q / Dn25Q: % of stocks up/down 25%+ over the past quarter (63 days).
-- Up25M / Dn25M: % of stocks up/down 25%+ over the past month (21 days).
+**2. Market Momentum & Quality**
+- Key indices (SPX, Russell 2000): trend, position relative to 20/50/200 DMAs, volume profile.
+- Market breadth.
+- VIX level and trend.
 
-RECENT HISTORY (last 5 sessions):
-{history}
+**3. Sector Rotation & Leadership**
+Top 2–3 leading sectors, top 2–3 leading industries and top 2–3 leading themes right now. Highlight any strong momentum rotation.
 
-TODAY:
-{today}
+**4. Key Levels & Risk**
+Major volatility outlook, and primary risks for the next 1–2 weeks.
 
-In 3–5 short bullet points, describe: (1) current market condition, (2) momentum trend, (3) breadth health, (4) any warning signs or opportunities. Be direct and specific to the numbers. No preamble."""
+**5. Headlines & News**
+Summarize today's top market headlines and their likely impact on the stock market over the next 1–2 weeks.
+
+**6. Final Trade Thesis**
+One-paragraph summary of the highest-probability swing opportunity right now and key catalysts to watch.
+
+Be objective, data-driven, and honest about weak conditions. Highlight any signs of exhaustion or reversal. Prioritize high relative strength setups with volume confirmation."""
 
     try:
         resp = requests.post(
             f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}",
             headers={"content-type": "application/json"},
             json={"contents": [{"parts": [{"text": prompt}]}]},
-            timeout=30,
+            timeout=60,
         )
         if not resp.ok:
-            return f"<p style='color:var(--red)'>Gemini error {resp.status_code}: {resp.text[:300]}</p>"
-        text = resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
-        lines = []
-        for line in text.splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            if line.startswith(("- ", "• ", "* ")):
-                lines.append(f"<li>{line[2:]}</li>")
-            else:
-                lines.append(f"<li>{line}</li>")
-        return "<ul>" + "".join(lines) + "</ul>"
+            return f"<p style='color:var(--red)'>Gemini error {resp.status_code}: {resp.text[:400]}</p>"
+        data          = resp.json()
+        candidate     = data["candidates"][0]
+        finish_reason = candidate.get("finishReason", "")
+        text          = candidate["content"]["parts"][0]["text"].strip()
+        html          = _md_to_html(text)
+        if finish_reason not in ("STOP", ""):
+            html += f"<p style='color:var(--yel)'>[Cut off — reason: {finish_reason}]</p>"
+        return html
     except Exception as e:
         return f"<p style='color:var(--red)'>{e}</p>"
 
@@ -306,10 +327,12 @@ html,body{{
 #ai-panel{{background:var(--surf);border:1px solid var(--bdr);border-radius:var(--r);overflow:hidden;margin:16px 28px 0}}
 #ai-panel .phdr{{display:flex;align-items:center;gap:10px;padding:7px 14px;background:var(--hdr);border-bottom:1px solid var(--bdr)}}
 #ai-panel .ai-tag{{font-size:8px;font-weight:700;letter-spacing:2px;text-transform:uppercase;padding:2px 7px;border-radius:3px;background:rgba(159,122,255,0.15);color:var(--pur);border:1px solid rgba(159,122,255,0.3)}}
-#ai-body{{padding:14px 18px;line-height:1.7;color:var(--lit);font-size:12px}}
-#ai-body ul{{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:6px}}
+#ai-body{{padding:14px 18px;line-height:1.7;color:var(--lit);font-size:12px;display:flex;flex-direction:column;gap:4px}}
+#ai-body ul{{list-style:none;padding:0;margin:2px 0 4px 0;display:flex;flex-direction:column;gap:4px}}
 #ai-body li{{padding-left:14px;position:relative;color:var(--lit)}}
 #ai-body li::before{{content:'›';position:absolute;left:0;color:var(--pur);font-weight:700}}
+#ai-body p{{margin:0}}
+#ai-body .ai-section{{font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--pur);margin-top:10px}}
 </style>
 </head>
 <body>
@@ -344,7 +367,7 @@ html,body{{
 <div id="ai-panel">
   <div class="phdr">
     <span class="ptitle">MARKET ANALYSIS</span>
-    <span class="ai-tag">GEMINI 2.5</span>
+    <span class="ai-tag">GEMINI 2.5 FLASH</span>
   </div>
   <div id="ai-body">{analysis}</div>
 </div>
@@ -613,7 +636,7 @@ function doRefresh() {{
   const lbl = btn.querySelector('.running-lbl');
   lbl.style.display = 'inline';
   window.location.href = 'marketmonitor:';
-  let s = 20;
+  let s = 60;
   const tick = () => {{
     lbl.textContent = 'UPDATING… ' + s + 's';
     if (s-- <= 0) {{ location.reload(); return; }}
