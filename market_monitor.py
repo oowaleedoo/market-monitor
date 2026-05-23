@@ -9,9 +9,19 @@ from pathlib import Path
 import argparse
 import io
 import json
+import os
 import subprocess
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
 import pandas as pd
+
+# Load .env if present (keeps secrets out of source control)
+_env = Path(__file__).parent / ".env"
+if _env.exists():
+    for _line in _env.read_text().splitlines():
+        if "=" in _line and not _line.startswith("#"):
+            _k, _v = _line.split("=", 1)
+            os.environ.setdefault(_k.strip(), _v.strip())
 
 OUT_HTML     = Path(__file__).parent / "market_monitor.html"
 STOCKBEE_URL = (
@@ -96,12 +106,75 @@ def load() -> pd.DataFrame:
     return df
 
 
+# ── Claude analysis ───────────────────────────────────────────────────────────
+
+def get_claude_analysis(df: pd.DataFrame) -> str:
+    api_key = os.environ.get("GEMINI_API_KEY", "")
+    if not api_key:
+        return "<p style='color:var(--red)'>GEMINI_API_KEY not set — add it to .env</p>"
+
+    L    = df.iloc[-1]
+    prev = df.iloc[-6:-1]  # last 5 days for trend context
+
+    def fmt_row(r):
+        return (
+            f"  {r['date'].strftime('%b %d')}: "
+            f"T2108={r['t2108']*100:.1f}%  "
+            f"Up4%={int(r['up_4pct'])}  Dn4%={int(r['dn_4pct'])}  "
+            f"Ratio5d={r['ratio_5d']:.2f}  Ratio10d={r['ratio_10d']:.2f}  "
+            f"Up25Q={r['up_25pct_quarter']*100:.1f}%  Dn25Q={r['down_25pct_quarter']*100:.1f}%  "
+            f"Up25M={r['up_25pct_month']*100:.1f}%  Dn25M={r['down_25pct_month']*100:.1f}%"
+        )
+
+    history = "\n".join(fmt_row(prev.iloc[i]) for i in range(len(prev)))
+    today   = fmt_row(L)
+
+    prompt = f"""You are analysing Stockbee breadth data for US equities. Interpret the current market condition concisely.
+
+METRIC DEFINITIONS:
+- T2108: % of stocks above their 40-day MA. <20% = oversold, >80% = overbought.
+- Up4% / Dn4%: number of stocks up/down more than 4% today (raw surge/distribution count).
+- Ratio5d / Ratio10d: rolling 5-day and 10-day ratio of up-4% to down-4% days. >1 = bullish momentum, <1 = bearish.
+- Up25Q / Dn25Q: % of stocks up/down 25%+ over the past quarter (63 days).
+- Up25M / Dn25M: % of stocks up/down 25%+ over the past month (21 days).
+
+RECENT HISTORY (last 5 sessions):
+{history}
+
+TODAY:
+{today}
+
+In 3–5 short bullet points, describe: (1) current market condition, (2) momentum trend, (3) breadth health, (4) any warning signs or opportunities. Be direct and specific to the numbers. No preamble."""
+
+    try:
+        resp = requests.post(
+            f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}",
+            headers={"content-type": "application/json"},
+            json={"contents": [{"parts": [{"text": prompt}]}]},
+            timeout=30,
+        )
+        if not resp.ok:
+            return f"<p style='color:var(--red)'>Gemini error {resp.status_code}: {resp.text[:300]}</p>"
+        text = resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+        lines = []
+        for line in text.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            if line.startswith(("- ", "• ", "* ")):
+                lines.append(f"<li>{line[2:]}</li>")
+            else:
+                lines.append(f"<li>{line}</li>")
+        return "<ul>" + "".join(lines) + "</ul>"
+    except Exception as e:
+        return f"<p style='color:var(--red)'>{e}</p>"
+
+
 # ── HTML builder ──────────────────────────────────────────────────────────────
 
-def build_html(df: pd.DataFrame) -> str:
+def build_html(df: pd.DataFrame, analysis: str = "", pjs: str = "") -> str:
     L   = df.iloc[-1]
     dt  = df["date"]
-    pjs = _get_plotly_js() or ""
 
     sp500_price = f"{L.sp500:,.2f}" if pd.notna(L.sp500) else "—"
     sp500_chg, sp500_cls = "", "neu"
@@ -230,6 +303,13 @@ html,body{{
 .reflegend{{display:flex;gap:14px;padding:4px 14px 8px;flex-wrap:wrap}}
 .rl{{font-size:10px;color:var(--txt);display:flex;align-items:center;gap:5px}}
 .rl span{{display:inline-block;width:22px;height:1px;border-top:1.5px dashed}}
+#ai-panel{{background:var(--surf);border:1px solid var(--bdr);border-radius:var(--r);overflow:hidden;margin:16px 28px 0}}
+#ai-panel .phdr{{display:flex;align-items:center;gap:10px;padding:7px 14px;background:var(--hdr);border-bottom:1px solid var(--bdr)}}
+#ai-panel .ai-tag{{font-size:8px;font-weight:700;letter-spacing:2px;text-transform:uppercase;padding:2px 7px;border-radius:3px;background:rgba(159,122,255,0.15);color:var(--pur);border:1px solid rgba(159,122,255,0.3)}}
+#ai-body{{padding:14px 18px;line-height:1.7;color:var(--lit);font-size:12px}}
+#ai-body ul{{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:6px}}
+#ai-body li{{padding-left:14px;position:relative;color:var(--lit)}}
+#ai-body li::before{{content:'›';position:absolute;left:0;color:var(--pur);font-weight:700}}
 </style>
 </head>
 <body>
@@ -259,6 +339,14 @@ html,body{{
       <span class="tv neu" style="font-size:13px">{last_date}</span>
     </div>
   </div>
+</div>
+
+<div id="ai-panel">
+  <div class="phdr">
+    <span class="ptitle">MARKET ANALYSIS</span>
+    <span class="ai-tag">GEMINI 2.5</span>
+  </div>
+  <div id="ai-body">{analysis}</div>
 </div>
 
 <div id="panels">
@@ -545,8 +633,17 @@ def main():
     parser.add_argument("--refresh", action="store_true")
     args = parser.parse_args()
 
-    df   = load()
-    html = build_html(df)
+    # load() and _get_plotly_js() are independent — run them in parallel
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        f_df  = pool.submit(load)
+        f_pjs = pool.submit(_get_plotly_js)
+        df    = f_df.result()
+        pjs   = f_pjs.result() or ""
+
+    # Gemini needs df, so it starts as soon as load() finishes
+    print("  Fetching Gemini analysis …")
+    analysis = get_claude_analysis(df)
+    html     = build_html(df, analysis, pjs)
 
     OUT_HTML.parent.mkdir(parents=True, exist_ok=True)
     OUT_HTML.write_text(html, encoding="utf-8")

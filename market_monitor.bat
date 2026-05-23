@@ -1,6 +1,7 @@
 @echo off
 title Market Monitor
 set SCRIPT=%~dp0market_monitor.py
+if exist "%~dp0.env" for /f "tokens=1,2 delims==" %%A in (%~dp0.env) do set %%A=%%B
 
 reg query "HKCU\Software\Classes\marketmonitor" >nul 2>&1
 if errorlevel 1 (
