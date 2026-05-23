@@ -174,7 +174,7 @@ Be objective, data-driven, and honest about weak conditions. Highlight any signs
         resp = requests.post(
             f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}",
             headers={"content-type": "application/json"},
-            json={"contents": [{"parts": [{"text": prompt}]}]},
+            json={"contents": [{"parts": [{"text": prompt}]}], "tools": [{"google_search": {}}]},
             timeout=60,
         )
         if not resp.ok:
