@@ -206,24 +206,29 @@ def build_html(df: pd.DataFrame, analysis: str = "", pjs: str = "") -> str:
 
     last_date = df["date"].iloc[-1].strftime("%b %d, %Y")
 
+    # Calendar days between first and last row that have no data (weekends /
+    # holidays) — fed to Plotly rangebreaks so charts skip them instead of
+    # leaving gaps.
+    present = set(dt.dt.normalize())
+    gaps    = [d.strftime("%Y-%m-%d")
+               for d in pd.date_range(dt.min(), dt.max(), freq="D")
+               if d not in present]
+
     # ── JSON payload ─────────────────────────────────────────────────────────
     D = json.dumps({
         "dates":   _d(dt),
+        "gaps":    gaps,
         "sp500":   _s(df["sp500"]),
         "sma50":   _s(df["sp500_sma50"]),
         "t2108":   _s(df["t2108"] * 100),
-        "up4":     _s(df["up_4pct"]),
-        "dn4":     _s(-df["dn_4pct"]),          # negative so bars go below zero
+        # Net breadth lines = Up − Down (one line per panel)
+        "net4":    _s(df["up_4pct"] - df["dn_4pct"]),
         "r5":      _s(df["ratio_5d"]),
         "r10":     _s(df["ratio_10d"]),
-        "up_q":    _s(df["up_25pct_quarter"]  * 100),
-        "dn_q":    _s(df["down_25pct_quarter"] * 100),
-        "up_m25":  _s(df["up_25pct_month"]    * 100),
-        "dn_m25":  _s(df["down_25pct_month"]  * 100),
-        "up_m50":  _s(df["up_50pct_month"]    * 100),
-        "dn_m50":  _s(df["down_50pct_month"]  * 100),
-        "up_34":   _s(df["up_13pct_34day"]    * 100),
-        "dn_34":   _s(df["down_13pct_34day"]  * 100),
+        "net_q":   _s((df["up_25pct_quarter"] - df["down_25pct_quarter"]) * 100),
+        "net_m25": _s((df["up_25pct_month"]   - df["down_25pct_month"])   * 100),
+        "net_m50": _s((df["up_50pct_month"]   - df["down_50pct_month"])   * 100),
+        "net_34":  _s((df["up_13pct_34day"]   - df["down_13pct_34day"])   * 100),
     }, separators=(",", ":"))
 
     # ── badges ───────────────────────────────────────────────────────────────
@@ -273,7 +278,7 @@ html,body{{
   background:var(--bg);
   color:var(--lit);
   font-family:'Consolas','Cascadia Code','JetBrains Mono','Courier New',monospace;
-  font-size:13px;
+  font-size:15px;
   min-height:100vh;
 }}
 #topbar{{
@@ -281,21 +286,21 @@ html,body{{
   padding:12px 28px;background:var(--hdr);
   border-bottom:1px solid var(--bdr);position:sticky;top:0;z-index:100;
 }}
-#logo{{font-size:15px;font-weight:700;letter-spacing:5px;text-transform:uppercase;color:var(--lit)}}
+#logo{{font-size:17px;font-weight:700;letter-spacing:5px;text-transform:uppercase;color:var(--lit)}}
 #logo em{{font-style:normal;color:var(--grn)}}
 #topstats{{display:flex;gap:32px;align-items:center}}
 .tstat{{text-align:right}}
-.tstat .tl{{font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--txt);display:block;margin-bottom:2px}}
-.tstat .tv{{font-size:17px;font-weight:700;color:var(--lit)}}
+.tstat .tl{{font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--txt);display:block;margin-bottom:2px}}
+.tstat .tv{{font-size:19px;font-weight:700;color:var(--lit)}}
 .tstat .tv.up{{color:var(--grn)}}
 .tstat .tv.dn{{color:var(--red)}}
 .tstat .tv.neu{{color:var(--yel)}}
-#updated{{font-size:10px;color:var(--txt);letter-spacing:1px}}
+#updated{{font-size:12px;color:var(--txt);letter-spacing:1px}}
 #refresh-btn{{
   display:inline-flex;align-items:center;gap:6px;
   padding:5px 13px;border-radius:var(--r);border:1px solid var(--bdr);
   background:rgba(61,158,255,0.08);color:var(--blu);
-  font-family:inherit;font-size:10px;font-weight:700;letter-spacing:2px;
+  font-family:inherit;font-size:12px;font-weight:700;letter-spacing:2px;
   text-transform:uppercase;cursor:pointer;transition:background .15s,border-color .15s;
 }}
 #refresh-btn:hover{{background:rgba(61,158,255,0.18);border-color:var(--blu)}}
@@ -310,29 +315,29 @@ html,body{{
   display:flex;align-items:center;justify-content:space-between;
   padding:7px 14px;background:var(--hdr);border-bottom:1px solid var(--bdr);
 }}
-.ptitle{{font-size:9px;letter-spacing:2.5px;text-transform:uppercase;color:var(--txt)}}
+.ptitle{{font-size:11px;letter-spacing:2.5px;text-transform:uppercase;color:var(--txt)}}
 .pbadges{{display:flex;gap:6px;flex-wrap:wrap}}
 .badge{{
-  display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;
+  display:inline-flex;align-items:center;gap:5px;font-size:13px;font-weight:700;
   padding:2px 8px 2px 6px;border-radius:3px;background:rgba(255,255,255,0.05);
 }}
 .badge.up{{color:var(--grn);border:1px solid rgba(0,229,160,0.25);background:rgba(0,229,160,0.07)}}
 .badge.dn{{color:var(--red);border:1px solid rgba(255,58,85,0.25);background:rgba(255,58,85,0.07)}}
 .badge.neu{{color:var(--yel);border:1px solid rgba(245,201,64,0.25);background:rgba(245,201,64,0.07)}}
-.blabel{{font-size:8px;font-weight:400;letter-spacing:1px;opacity:0.7;text-transform:uppercase}}
+.blabel{{font-size:10px;font-weight:400;letter-spacing:1px;opacity:0.7;text-transform:uppercase}}
 .chart{{width:100%}}
 .reflegend{{display:flex;gap:14px;padding:4px 14px 8px;flex-wrap:wrap}}
-.rl{{font-size:10px;color:var(--txt);display:flex;align-items:center;gap:5px}}
+.rl{{font-size:12px;color:var(--txt);display:flex;align-items:center;gap:5px}}
 .rl span{{display:inline-block;width:22px;height:1px;border-top:1.5px dashed}}
 #ai-panel{{background:var(--surf);border:1px solid var(--bdr);border-radius:var(--r);overflow:hidden;margin:16px 28px 0}}
 #ai-panel .phdr{{display:flex;align-items:center;gap:10px;padding:7px 14px;background:var(--hdr);border-bottom:1px solid var(--bdr)}}
-#ai-panel .ai-tag{{font-size:8px;font-weight:700;letter-spacing:2px;text-transform:uppercase;padding:2px 7px;border-radius:3px;background:rgba(159,122,255,0.15);color:var(--pur);border:1px solid rgba(159,122,255,0.3)}}
-#ai-body{{padding:14px 18px;line-height:1.7;color:var(--lit);font-size:12px;display:flex;flex-direction:column;gap:4px}}
+#ai-panel .ai-tag{{font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;padding:2px 7px;border-radius:3px;background:rgba(159,122,255,0.15);color:var(--pur);border:1px solid rgba(159,122,255,0.3)}}
+#ai-body{{padding:14px 18px;line-height:1.7;color:var(--lit);font-size:14px;display:flex;flex-direction:column;gap:4px}}
 #ai-body ul{{list-style:none;padding:0;margin:2px 0 4px 0;display:flex;flex-direction:column;gap:4px}}
 #ai-body li{{padding-left:14px;position:relative;color:var(--lit)}}
 #ai-body li::before{{content:'›';position:absolute;left:0;color:var(--pur);font-weight:700}}
 #ai-body p{{margin:0}}
-#ai-body .ai-section{{font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--pur);margin-top:10px}}
+#ai-body .ai-section{{font-size:12px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--pur);margin-top:10px}}
 </style>
 </head>
 <body>
@@ -359,7 +364,7 @@ html,body{{
     </div>
     <div class="tstat">
       <span class="tl">Updated</span>
-      <span class="tv neu" style="font-size:13px">{last_date}</span>
+      <span class="tv neu" style="font-size:15px">{last_date}</span>
     </div>
   </div>
 </div>
@@ -402,25 +407,34 @@ html,body{{
   <!-- 3. Daily 4% Moves -->
   <div class="panel">
     <div class="phdr">
-      <span class="ptitle">Daily Breadth — Stocks Up / Down 4%</span>
+      <span class="ptitle">Daily Breadth — Net 4% Movers (Up − Down)</span>
       <div class="pbadges">{b_up4}{b_dn4}</div>
     </div>
     <div id="c-4pct" class="chart"></div>
   </div>
 
-  <!-- 4. 5d / 10d Ratio -->
+  <!-- 4a. 5d Ratio -->
   <div class="panel">
     <div class="phdr">
-      <span class="ptitle">4% Up/Down Ratio — Rolling 5d &amp; 10d</span>
-      <div class="pbadges">{b_r5}{b_r10}</div>
+      <span class="ptitle">4% Up/Down Ratio — Rolling 5d</span>
+      <div class="pbadges">{b_r5}</div>
     </div>
-    <div id="c-ratio" class="chart"></div>
+    <div id="c-ratio5" class="chart"></div>
+  </div>
+
+  <!-- 4b. 10d Ratio -->
+  <div class="panel">
+    <div class="phdr">
+      <span class="ptitle">4% Up/Down Ratio — Rolling 10d</span>
+      <div class="pbadges">{b_r10}</div>
+    </div>
+    <div id="c-ratio10" class="chart"></div>
   </div>
 
   <!-- 5. Quarterly Momentum -->
   <div class="panel">
     <div class="phdr">
-      <span class="ptitle">Quarterly Momentum — ±25% in 63 Days</span>
+      <span class="ptitle">Quarterly Momentum — Net ±25% in 63 Days</span>
       <div class="pbadges">{b_upq}{b_dnq}</div>
     </div>
     <div id="c-qtr" class="chart"></div>
@@ -429,7 +443,7 @@ html,body{{
   <!-- 6. Monthly Momentum ±25% -->
   <div class="panel">
     <div class="phdr">
-      <span class="ptitle">Monthly Momentum — ±25% in 21 Days</span>
+      <span class="ptitle">Monthly Momentum — Net ±25% in 21 Days</span>
       <div class="pbadges">{b_upm}{b_dnm}</div>
     </div>
     <div id="c-month25" class="chart"></div>
@@ -438,7 +452,7 @@ html,body{{
   <!-- 7. Monthly Momentum ±50% -->
   <div class="panel">
     <div class="phdr">
-      <span class="ptitle">Monthly Momentum — ±50% in 21 Days</span>
+      <span class="ptitle">Monthly Momentum — Net ±50% in 21 Days</span>
       <div class="pbadges">{b_upm50}{b_dnm50}</div>
     </div>
     <div id="c-month50" class="chart"></div>
@@ -447,7 +461,7 @@ html,body{{
   <!-- 8. 34-Day Momentum -->
   <div class="panel">
     <div class="phdr">
-      <span class="ptitle">34-Day Momentum — ±13% in 34 Days</span>
+      <span class="ptitle">34-Day Momentum — Net ±13% in 34 Days</span>
       <div class="pbadges">{b_up34}{b_dn34}</div>
     </div>
     <div id="c-d34" class="chart"></div>
@@ -470,6 +484,8 @@ const BLU  = '#3d9eff';
 const YEL  = '#f5c940';
 const ORG  = '#ff8c40';
 const TEL  = '#00cce0';
+const GRNBAR = 'rgba(0,229,160,0.75)';
+const REDBAR = 'rgba(255,58,85,0.75)';
 
 function baseLayout(h, showX) {{
   return {{
@@ -481,6 +497,7 @@ function baseLayout(h, showX) {{
       showgrid:true, gridcolor:GRID, gridwidth:1, zeroline:false,
       tickfont:{{size:9,color:TXT}}, showticklabels:showX,
       tickformat:'%b %y', rangeslider:{{visible:false}}, linecolor:GRID,
+      rangebreaks:[{{values:D.gaps, dvalue:86400000}}],
     }},
     yaxis: {{
       showgrid:true, gridcolor:GRID, gridwidth:1, zeroline:false,
@@ -522,6 +539,28 @@ function area(x, y, name, color, fillcolor) {{
   }};
 }}
 
+function bar(x, y, name, threshold) {{
+  // Up (≥ threshold) green, down (< threshold) red — per-bar coloring.
+  const colors = y.map(v => v === null ? GRNBAR : (v >= threshold ? GRNBAR : REDBAR));
+  return {{
+    type:'bar', x, y, name,
+    marker:{{color: colors}},
+    hovertemplate:`<b>${{name}}</b>: %{{y:.2f}}<extra></extra>`,
+  }};
+}}
+
+function barCentered(x, y, name, center) {{
+  // Bars pivot at `center`: grow up (green) when ≥ center, down (red) when below.
+  const colors = y.map(v => v === null ? GRNBAR : (v >= center ? GRNBAR : REDBAR));
+  return {{
+    type:'bar', x, base: center, name,
+    y: y.map(v => v === null ? null : v - center),
+    customdata: y,
+    marker:{{color: colors}},
+    hovertemplate:`<b>${{name}}</b>: %{{customdata:.2f}}<extra></extra>`,
+  }};
+}}
+
 const CONFIG = {{
   scrollZoom:true, displayModeBar:true, displaylogo:false,
   modeBarButtonsToRemove:['select2d','lasso2d','autoScale2d'],
@@ -530,8 +569,8 @@ const CONFIG = {{
 
 /* ── 1. S&P 500 ─────────────────────────────────────────────────── */
 Plotly.newPlot('c-spy', [
-  scatter(D.dates, D.sp500, 'S&P 500', BLU, 'solid', 1.8),
-  scatter(D.dates, D.sma50, 'SMA 50',  YEL, 'dot',   1.2),
+  scatter(D.dates, D.sp500, 'S&P 500', GRN, 'solid', 1.8),
+  scatter(D.dates, D.sma50, 'SMA 50',  YEL, 'dot',   1.5),
 ], Object.assign(baseLayout(300,false), {{
   yaxis:{{showgrid:true,gridcolor:GRID,gridwidth:1,zeroline:false,
          tickfont:{{size:9,color:TXT}},linecolor:GRID,tickformat:',.0f'}},
@@ -539,77 +578,78 @@ Plotly.newPlot('c-spy', [
 
 /* ── 2. T2108 ───────────────────────────────────────────────────── */
 Plotly.newPlot('c-t2108', [
-  area(D.dates, D.t2108, 'T2108', TEL, 'rgba(0,204,224,0.10)'),
+  area(D.dates, D.t2108, 'T2108', GRN, 'rgba(0,229,160,0.10)'),
 ], Object.assign(baseLayout(300,false), {{
   shapes:[hline(20, RED), hline(80, GRN)],
   yaxis:{{showgrid:true,gridcolor:GRID,gridwidth:1,zeroline:false,
          tickfont:{{size:9,color:TXT}},linecolor:GRID,ticksuffix:'%',range:[0,100]}},
 }}), CONFIG);
 
-/* ── 3. Daily 4% Moves ──────────────────────────────────────────── */
-(function(){{
-  Plotly.newPlot('c-4pct', [
-    {{type:'bar', x:D.dates, y:D.up4,  name:'↑4%', marker:{{color:'rgba(0,229,160,0.75)'}},
-      hovertemplate:'↑4%%: %{{y:,d}}<extra></extra>'}},
-    {{type:'bar', x:D.dates, y:D.dn4,  name:'↓4%', marker:{{color:'rgba(255,58,85,0.75)'}},
-      hovertemplate:'↓4%%: %{{customdata:,d}}<extra></extra>',
-      customdata:D.dn4.map(v => v === null ? null : -v)}},
-  ], Object.assign(baseLayout(300,false), {{
-    barmode:'overlay',
-    shapes:[hline(0, TXT, 'solid')],
-    yaxis:{{showgrid:true,gridcolor:GRID,gridwidth:1,zeroline:false,
-           tickfont:{{size:9,color:TXT}},linecolor:GRID}},
-  }}), CONFIG);
-}})();
+/* ── 3. Daily 4% Moves — Net (Up − Down) ────────────────────────── */
+Plotly.newPlot('c-4pct', [
+  bar(D.dates, D.net4, 'Net 4% (Up − Down)', 0),
+], Object.assign(baseLayout(300,false), {{
+  shapes:[hline(0, TXT, 'solid')],
+  yaxis:{{showgrid:true,gridcolor:GRID,gridwidth:1,zeroline:false,
+         tickfont:{{size:9,color:TXT}},linecolor:GRID}},
+}}), CONFIG);
 
-/* ── 4. 5d / 10d Ratio ──────────────────────────────────────────── */
-Plotly.newPlot('c-ratio', [
-  scatter(D.dates, D.r5,  'Ratio 5d',  GRN, 'solid', 1.8),
-  scatter(D.dates, D.r10, 'Ratio 10d', YEL, 'dot',   1.5),
+/* ── 4a. 5d Ratio ───────────────────────────────────────────────── */
+Plotly.newPlot('c-ratio5', [
+  barCentered(D.dates, D.r5,  'Ratio 5d',  1),
 ], Object.assign(baseLayout(300,false), {{
   shapes:[hline(1, TXT, 'solid')],
   yaxis:{{showgrid:true,gridcolor:GRID,gridwidth:1,zeroline:false,
          tickfont:{{size:9,color:TXT}},linecolor:GRID}},
 }}), CONFIG);
 
-/* ── 5. Quarterly Momentum ──────────────────────────────────────── */
+/* ── 4b. 10d Ratio ──────────────────────────────────────────────── */
+Plotly.newPlot('c-ratio10', [
+  barCentered(D.dates, D.r10, 'Ratio 10d', 1),
+], Object.assign(baseLayout(300,false), {{
+  shapes:[hline(1, TXT, 'solid')],
+  yaxis:{{showgrid:true,gridcolor:GRID,gridwidth:1,zeroline:false,
+         tickfont:{{size:9,color:TXT}},linecolor:GRID}},
+}}), CONFIG);
+
+/* ── 5. Quarterly Momentum — Net (Up − Down) ────────────────────── */
 Plotly.newPlot('c-qtr', [
-  scatter(D.dates, D.up_q, '↑25% / 63d', GRN, 'solid', 1.8),
-  scatter(D.dates, D.dn_q, '↓25% / 63d', RED, 'solid', 1.8),
+  bar(D.dates, D.net_q, 'Net ±25% / 63d', 0),
 ], Object.assign(baseLayout(300,false), {{
+  shapes:[hline(0, TXT, 'solid')],
   yaxis:{{showgrid:true,gridcolor:GRID,gridwidth:1,zeroline:false,
          tickfont:{{size:9,color:TXT}},linecolor:GRID,ticksuffix:'%'}},
 }}), CONFIG);
 
-/* ── 6. Monthly Momentum ±25% ───────────────────────────────────── */
+/* ── 6. Monthly Momentum ±25% — Net (Up − Down) ─────────────────── */
 Plotly.newPlot('c-month25', [
-  scatter(D.dates, D.up_m25, '↑25% / 21d', GRN, 'solid', 1.8),
-  scatter(D.dates, D.dn_m25, '↓25% / 21d', RED, 'solid', 1.8),
+  bar(D.dates, D.net_m25, 'Net ±25% / 21d', 0),
 ], Object.assign(baseLayout(300,false), {{
+  shapes:[hline(0, TXT, 'solid')],
   yaxis:{{showgrid:true,gridcolor:GRID,gridwidth:1,zeroline:false,
          tickfont:{{size:9,color:TXT}},linecolor:GRID,ticksuffix:'%'}},
 }}), CONFIG);
 
-/* ── 7. Monthly Momentum ±50% ───────────────────────────────────── */
+/* ── 7. Monthly Momentum ±50% — Net (Up − Down) ─────────────────── */
 Plotly.newPlot('c-month50', [
-  scatter(D.dates, D.up_m50, '↑50% / 21d', TEL, 'solid', 1.8),
-  scatter(D.dates, D.dn_m50, '↓50% / 21d', ORG, 'solid', 1.8),
+  bar(D.dates, D.net_m50, 'Net ±50% / 21d', 0),
 ], Object.assign(baseLayout(300,false), {{
+  shapes:[hline(0, TXT, 'solid')],
   yaxis:{{showgrid:true,gridcolor:GRID,gridwidth:1,zeroline:false,
          tickfont:{{size:9,color:TXT}},linecolor:GRID,ticksuffix:'%'}},
 }}), CONFIG);
 
-/* ── 8. 34-Day Momentum ─────────────────────────────────────────── */
+/* ── 8. 34-Day Momentum — Net (Up − Down) ───────────────────────── */
 Plotly.newPlot('c-d34', [
-  scatter(D.dates, D.up_34, '↑13% / 34d', GRN, 'solid', 1.8),
-  scatter(D.dates, D.dn_34, '↓13% / 34d', RED, 'solid', 1.8),
+  bar(D.dates, D.net_34, 'Net ±13% / 34d', 0),
 ], Object.assign(baseLayout(300, true), {{
+  shapes:[hline(0, TXT, 'solid')],
   yaxis:{{showgrid:true,gridcolor:GRID,gridwidth:1,zeroline:false,
          tickfont:{{size:9,color:TXT}},linecolor:GRID,ticksuffix:'%'}},
 }}), CONFIG);
 
 /* ── linked x-axis zoom/pan ─────────────────────────────────────── */
-const CHARTS = ['c-spy','c-t2108','c-4pct','c-ratio','c-qtr','c-month25','c-month50','c-d34'];
+const CHARTS = ['c-spy','c-t2108','c-4pct','c-ratio5','c-ratio10','c-qtr','c-month25','c-month50','c-d34'];
 let syncing = false;
 
 CHARTS.forEach(id => {{
