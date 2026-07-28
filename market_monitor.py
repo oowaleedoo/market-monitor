@@ -146,24 +146,26 @@ def get_claude_analysis(df: pd.DataFrame) -> str:
 
 Provide a clear, concise market status update for swing trading right now. Use the latest price data and sentiment.
 
+For each section below, give me a quick summary with just the key takeaway. No deep dives, no long explanations or background; keep every section brief enough to read at a glance.
+
 Structure your response exactly like this:
 
 **1. Overall Market Bias**
 (Bullish / Bearish / Neutral / Cautious) + one-sentence justification.
 
-**2. Market Momentum & Quality**
+**2. Most Important News**
+The 2–3 news items most capable of moving price right now, ranked by impact. Each one on a single bullet: what happened, what it hits (the whole market, or a named sector or industry), which way it pushes, and how long the effect should last. Only genuinely market-moving items — macro prints, central-bank and policy decisions, geopolitics, or a sector/industry-wide catalyst such as a bellwether earnings report or a regulatory ruling that re-rates its whole group. Skip single-company news unless it drags its sector with it. Say plainly if nothing material is driving today rather than filling the section.
+
+**3. Market Momentum & Quality**
 - Key indices (SPX): trend, position relative to 20/50/200 DMAs, volume profile.
 - Market breadth.
 - VIX level and trend.
 
-**3. Sector Rotation & Leadership**
+**4. Sector Rotation & Leadership**
 Top 2–3 leading sectors, top 2–3 leading industries and top 2–3 leading themes right now. Highlight any strong momentum rotation.
 
-**4. Key Levels & Risk**
+**5. Key Levels & Risk**
 Major volatility outlook, and primary risks for the next 1–2 weeks.
-
-**5. Headlines & News**
-Summarize today's top market headlines and their likely impact on the stock market over the next 1–2 weeks.
 
 **6. Final Trade Thesis**
 One-paragraph summary of the highest-probability swing opportunity right now and key catalysts to watch.
@@ -533,7 +535,7 @@ function scatter(x, y, name, color, dash, width) {{
 function area(x, y, name, color, fillcolor) {{
   return {{
     type:'scatter', mode:'lines', x, y, name,
-    fill:'tozeroy', line:{{color, width:1.5}},
+    fill: fillcolor ? 'tozeroy' : 'none', line:{{color, width:1.5}},
     fillcolor: fillcolor,
     hovertemplate:`%{{y:.1f}}%<extra></extra>`,
   }};
@@ -578,7 +580,7 @@ Plotly.newPlot('c-spy', [
 
 /* ── 2. T2108 ───────────────────────────────────────────────────── */
 Plotly.newPlot('c-t2108', [
-  area(D.dates, D.t2108, 'T2108', GRN, 'rgba(0,229,160,0.10)'),
+  area(D.dates, D.t2108, 'T2108', GRN),
 ], Object.assign(baseLayout(300,false), {{
   shapes:[hline(20, RED), hline(80, GRN)],
   yaxis:{{showgrid:true,gridcolor:GRID,gridwidth:1,zeroline:false,
